@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Generated vector index + metadata (rebuildable from dataset/)
+vectorstore/index/*
+!vectorstore/index/.gitkeep
+
+# OS cruft
+.DS_Store
+Thumbs.db
