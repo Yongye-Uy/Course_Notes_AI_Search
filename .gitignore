@@ -17,3 +17,6 @@ vectorstore/index/*
 # OS cruft
 .DS_Store
 Thumbs.db
+
+#portfolio
+docs

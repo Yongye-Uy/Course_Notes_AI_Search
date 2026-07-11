@@ -325,23 +325,3 @@ hosted directly:
    first run); Streamlit Cloud's filesystem is ephemeral between
    deploys, so expect a rebuild after each redeploy rather than a
    permanently cached index.
-
-## Future improvements
-
-- Hard similarity-score floor in `retrieval/search.py` as a
-  belt-and-suspenders refusal check, independent of the LLM's judgment.
-- Sentence-aware chunking (e.g. via a lightweight sentence tokenizer)
-  as an alternative to paragraph-packing for notes with very long
-  paragraphs.
-- Streaming responses in the UI (`stream=True` + incremental render).
-- Token usage and per-query latency displayed in the Sources panel.
-- A dataset selector in the sidebar for maintaining more than one
-  course's notes side by side.
-
-## Screenshots
-
-_Add screenshots of the Search tab and Evaluation tab here before
-submitting._
-
-`docs/screenshot-search.png`
-`docs/screenshot-evaluation.png`
