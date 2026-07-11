@@ -4,9 +4,7 @@ Central configuration for the Course Notes AI Search System.
 Every tunable setting used by the app lives here, loaded from a local
 .env file. No other module should read os.environ directly or hardcode
 a path, model name, or credential -- everything imports `config` from
-this file instead. That way there is exactly one place to change a
-default, and exactly one place a grader needs to look to see what's
-configurable.
+this file instead.
 """
 
 from __future__ import annotations
@@ -34,7 +32,7 @@ class Config:
     dataset_dir: Path = PROJECT_ROOT / "dataset"
     index_dir: Path = PROJECT_ROOT / "vectorstore" / "index"
 
-    # --- Chunking (requirement: configurable chunk size + overlap) ---
+    # --- Chunking ---
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "50"))
 
@@ -57,9 +55,7 @@ class Config:
     max_tokens: int = int(os.getenv("MAX_TOKENS", "4096"))
 
 
-# A single shared instance that every module imports, e.g.:
-#   from config import config
-#   print(config.chunk_size)
+# A single shared instance every module imports: `from config import config`.
 config = Config()
 
 

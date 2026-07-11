@@ -46,10 +46,8 @@ class EmbeddingEncoder:
     def encode(self, texts: list[str], batch_size: int = 32) -> np.ndarray:
         """Encode a list of texts into L2-normalized float32 vectors.
 
-        Normalizing here (rather than leaving it to the caller) means
-        FAISS's inner-product search in vectorstore/store.py is
-        mathematically equivalent to cosine similarity, with no extra
-        normalization step needed at query time.
+        Normalizing here lets vectorstore.build_index's IndexFlatIP search
+        behave as cosine similarity -- see that function for why.
         """
         if not texts:
             return np.empty((0, self.embedding_dim), dtype=np.float32)

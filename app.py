@@ -21,17 +21,14 @@ from retrieval.search import EmbeddingModelMismatchError, search
 from vectorstore import store
 
 # A generous cap, not a real limit on legitimate questions -- mainly a
-# guard against pasting a huge block of text (e.g. an adversarial
-# prompt-injection payload) that would waste an LLM call on something
-# that was never a real course-notes question.
+# guard against pasting a huge block of text that would waste an LLM
+# call on something that was never a real course-notes question.
 MAX_QUESTION_LENGTH = 1000
 
-# Fixed test queries for the Evaluation tab (brief requires 5-10, with
-# retrieved chunks, similarity, generated answer, and an optional
-# expected answer for comparison). Kept here rather than a separate
-# module since it's a short, static list specific to this app's UI.
-# The last case is deliberately off-topic (no expected_answer) to
-# demonstrate the required graceful-refusal behavior in the write-up.
+# Fixed test queries for the Evaluation tab, kept here since it's a
+# short, static list specific to this app's UI. The last case is
+# deliberately off-topic (no expected_answer) to exercise the refusal
+# path.
 EVAL_CASES: list[dict] = [
     {
         "question": "What is PageRank and how does it work?",
@@ -84,18 +81,15 @@ EVAL_CASES: list[dict] = [
         ),
     },
     {
-        # Deliberately outside the course notes -- the correct behavior is
-        # the fixed refusal message, not a hallucinated answer.
+        # Deliberately outside the course notes -- correct behavior is the
+        # fixed refusal message, not a hallucinated answer.
         "question": "What is the capital of France?",
         "expected_answer": None,
     },
     {
-        # Compound question spanning two different courses' notes (AI +
-        # BM-25/IR). Regression test for a real bug: a single embedding
-        # of this whole query used to drift toward one topic and crowd
-        # the other out of retrieval entirely, producing a full refusal
-        # even though both halves answer correctly on their own. Correct
-        # behavior now is a partial-or-full answer covering both parts.
+        # Regression test for a compound query spanning two courses' notes;
+        # see retrieval.search._split_into_subqueries for why this needs
+        # special handling.
         "question": "What is AI? And what is BM-25?",
         "expected_answer": (
             "Should address both parts: a definition of AI, and a "
@@ -104,25 +98,21 @@ EVAL_CASES: list[dict] = [
     },
 ]
 
-st.set_page_config(page_title="Course Notes AI Search", layout="wide")
+st.set_page_config(page_title="Course Notes AI Search", page_icon="📚", layout="wide")
 
 # Holds the most recent question's results so the Answer/Sources panels
-# keep showing them across reruns caused by moving a slider, instead of
-# disappearing (or silently re-querying the LLM) on every interaction.
+# survive reruns triggered by moving a slider, instead of disappearing.
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 
 
 @st.cache_resource(show_spinner="Loading embedding model and checking the index...")
 def get_resources(embedding_model: str):
-    """Load the encoder and an up-to-date FAISS index for one embedding
-    model. Cached per embedding_model for the app's lifetime -- picking
-    a different model in the sidebar naturally busts this cache since
-    the cache key (the function argument) changes.
+    """Load the encoder and an up-to-date FAISS index for one embedding model.
 
-    rebuild_pipeline() itself only re-embeds when the dataset or
-    settings actually changed since the last build, so calling it here
-    is cheap on a cache hit and correct on a cache miss.
+    Cached per embedding_model, so switching models in the sidebar busts the
+    cache naturally. rebuild_pipeline() only re-embeds when the dataset or
+    settings changed, so this stays cheap on a cache hit.
     """
     encoder = EmbeddingEncoder(embedding_model)
     build_result = store.rebuild_pipeline(config, embedding_model)
@@ -135,12 +125,32 @@ st.caption(
     "with citations back to the source chunks."
 )
 
+with st.expander("ℹ️ How this works"):
+    st.markdown(
+        "1. Your question and every note chunk are converted into vectors "
+        "by the embedding model.\n"
+        "2. **Top-K** (sidebar) controls how many of the closest-matching "
+        "chunks are retrieved as sources.\n"
+        "3. The AI answers using only those retrieved chunks, and each "
+        "source below shows whether it was actually **cited** in the answer."
+    )
+
 for problem in validate_config():
     st.error(problem)
 
 # --- Sidebar: settings ---
 st.sidebar.header("Settings")
-top_k = st.sidebar.slider("Top-K (chunks to retrieve)", min_value=1, max_value=15, value=config.top_k_default)
+top_k = st.sidebar.slider(
+    "Top-K (chunks to retrieve)",
+    min_value=1,
+    max_value=15,
+    value=config.top_k_default,
+    help=(
+        "How many matching note excerpts to retrieve and show as sources "
+        "for the answer. Higher = more supporting context, but may pull "
+        "in less relevant excerpts."
+    ),
+)
 
 # Not exposed as a slider -- it only changes the wording of the answer,
 # not retrieval or grounding, and users found it a confusing control.
@@ -152,6 +162,10 @@ embedding_model = st.sidebar.selectbox(
     AVAILABLE_EMBEDDING_MODELS,
     index=AVAILABLE_EMBEDDING_MODELS.index(config.embedding_model_default),
     format_func=lambda name: EMBEDDING_MODEL_LABELS.get(name, name),
+    help=(
+        "The AI model used to match your question against your notes. "
+        "'Smart' is more accurate but slower; 'Basic' is fastest."
+    ),
 )
 
 if st.sidebar.button("Rebuild Index", help="Re-scan dataset/ and rebuild from scratch."):
@@ -168,24 +182,27 @@ except Exception as exc:
     st.sidebar.error(f"Could not load embedding model or index: {exc}")
 
 st.sidebar.subheader("Dataset statistics")
+doc_count = build_result.doc_count if build_result is not None else 0
+chunk_count = build_result.chunk_count if build_result is not None else 0
+
+stat_col1, stat_col2 = st.sidebar.columns(2)
+stat_col1.metric("Documents", doc_count)
+stat_col2.metric("Chunks", chunk_count)
+
+manifest = build_result.manifest if build_result is not None else None
+if manifest is None:
+    st.sidebar.badge("Index not built", color="gray")
+else:
+    built_model_label = EMBEDDING_MODEL_LABELS.get(
+        manifest["embedding_model"], manifest["embedding_model"]
+    )
+    built_at = datetime.fromisoformat(manifest["built_at"])
+    st.sidebar.badge("Index built", icon=":material/check_circle:", color="green")
+    st.sidebar.caption(
+        f"{built_at:%Y-%m-%d %H:%M} · {manifest['chunk_count']} chunks · {built_model_label}"
+    )
+
 if build_result is not None:
-    st.sidebar.write(f"Documents: {build_result.doc_count}")
-    st.sidebar.write(f"Chunks: {build_result.chunk_count}")
-
-    manifest = build_result.manifest
-    if manifest is None:
-        index_status = "Not built"
-    else:
-        built_model_label = EMBEDDING_MODEL_LABELS.get(
-            manifest["embedding_model"], manifest["embedding_model"]
-        )
-        built_at = datetime.fromisoformat(manifest["built_at"])
-        index_status = (
-            f"Built {built_at:%Y-%m-%d %H:%M} "
-            f"({manifest['chunk_count']} chunks, {built_model_label})"
-        )
-    st.sidebar.write(f"Index status: {index_status}")
-
     if build_result.warnings:
         with st.sidebar.expander(f"{len(build_result.warnings)} file(s) skipped during load"):
             for warning in build_result.warnings:
@@ -196,14 +213,16 @@ if build_result is not None:
             f"No documents found in `{config.dataset_dir}`. Add .md course notes "
             "and click Rebuild Index."
         )
-else:
-    st.sidebar.write("Documents: 0")
-    st.sidebar.write("Chunks: 0")
-    st.sidebar.write("Index status: Not built")
+    else:
+        dataset_titles = sorted({m["filename"].removesuffix(".md") for m in build_result.metadata})
+        with st.sidebar.expander("📂 What's in this dataset"):
+            st.caption("Topics currently indexed and searchable:")
+            for title in dataset_titles:
+                st.write(f"- {title}")
 
 
 # --- Main area ---
-search_tab, eval_tab = st.tabs(["Search", "Evaluation"])
+search_tab, eval_tab = st.tabs(["🔍 Search", "🧪 Evaluation"])
 
 with search_tab:
     with st.form("search_form"):
@@ -244,7 +263,9 @@ with search_tab:
                     }
 
     result = st.session_state.last_result
-    if result is not None:
+    if result is None:
+        st.info("Ask a question above to see a grounded, cited answer with sources here.")
+    else:
         st.subheader("Answer")
         answer_result = result["answer_result"]
         if answer_result.error:
@@ -260,14 +281,22 @@ with search_tab:
         else:
             cited_chunk_ids = {r.chunk["chunk_id"] for r in answer_result.cited_sources}
             for r in retrieved:
-                cited_label = " -- cited" if r.chunk["chunk_id"] in cited_chunk_ids else ""
-                heading = f" | {r.chunk['heading_path']}" if r.chunk["heading_path"] else ""
-                label = (
-                    f"[{r.rank}] {r.chunk['filename']} - chunk {r.chunk['chunk_index']} "
-                    f"- similarity {r.score:.3f}{cited_label}{heading}"
-                )
-                with st.expander(label):
-                    st.write(r.chunk["text"])
+                is_cited = r.chunk["chunk_id"] in cited_chunk_ids
+                heading = f" · {r.chunk['heading_path']}" if r.chunk["heading_path"] else ""
+
+                with st.container(border=True):
+                    header_col, badge_col = st.columns([5, 1])
+                    with header_col:
+                        st.markdown(f"**[{r.rank}] {r.chunk['filename']}**")
+                        st.caption(f"chunk {r.chunk['chunk_index']}{heading}")
+                    with badge_col:
+                        if is_cited:
+                            st.badge("Cited", icon=":material/check_circle:", color="green")
+
+                    st.progress(min(max(r.score, 0.0), 1.0), text=f"Similarity {r.score:.0%}")
+
+                    with st.expander("Show excerpt"):
+                        st.write(r.chunk["text"])
 
 with eval_tab:
     st.write(

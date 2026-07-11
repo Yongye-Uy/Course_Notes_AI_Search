@@ -51,17 +51,15 @@ def _split_into_subqueries(query: str) -> list[str]:
     A single embedding of a multi-topic query (e.g. "what is ai? and
     BM-25?") tends to drift toward one topic in vector space and can
     crowd the other topic out of top-k entirely, even though each
-    topic retrieves well on its own. search() below retrieves each
+    topic retrieves well on its own. search() retrieves each
     sub-question independently and merges the results to avoid that.
 
     Splitting is deliberately conservative -- on '?' boundaries only,
-    not on "and" -- because plenty of ordinary single questions
-    contain "and" as normal phrasing (e.g. "What is PageRank and how
-    does it work?"); splitting those would strand a meaningless
-    fragment like "how does it work?" with no subject. A question with
-    one or zero '?' characters always returns as a list of one
-    (itself), so the overwhelmingly common single-question case is
-    untouched.
+    not on "and" -- since ordinary single questions often contain
+    "and" as normal phrasing (e.g. "What is PageRank and how does it
+    work?"), and splitting those would strand a subject-less fragment.
+    A question with one or zero '?' characters returns as a list of
+    one, so the common single-question case is untouched.
     """
     parts = [p.strip() for p in _SUBQUERY_SPLIT_RE.split(query) if p.strip()]
     if len(parts) < 2:
@@ -84,14 +82,11 @@ def search(
 
     Returns an empty list immediately -- without touching FAISS at all
     -- if there is no index yet or it's empty. Callers (see
-    generation/client.py) turn an empty result into the required
-    "couldn't find relevant information" refusal.
+    generation/client.py) turn an empty result into the "couldn't find
+    relevant information" refusal.
 
-    Compound questions (e.g. "what is ai? and BM-25?") are split into
-    sub-questions and retrieved independently, then merged -- see
-    _split_into_subqueries. A single question splits into a list of
-    one, so this reduces to one embedding call and one FAISS search,
-    identical to before this was added.
+    Compound questions are split and retrieved independently, then
+    merged; see _split_into_subqueries.
     """
     if index is None or index.ntotal == 0:
         return []

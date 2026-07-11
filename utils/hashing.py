@@ -8,11 +8,9 @@ import hashlib
 def sha256_of_strings(parts: list[str]) -> str:
     """Return a stable SHA-256 hex digest of a sequence of strings.
 
-    A null-byte separator is written between parts so that, e.g.,
-    ["ab", "c"] and ["a", "bc"] never collide to the same digest.
-    Order matters -- callers that want a hash independent of input
-    order (e.g. a set of chunks that could come back in any order)
-    must sort `parts` themselves before calling this.
+    A null byte separates parts so ["ab", "c"] and ["a", "bc"] never
+    collide. Order matters -- sort `parts` first if the hash must be
+    independent of input order.
     """
     hasher = hashlib.sha256()
     for part in parts:

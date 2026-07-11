@@ -3,10 +3,9 @@ Chunking: split each loaded Document into retrievable Chunk pieces.
 
 Strategy: section-aware first (split on genuine Markdown headings, see
 ingestion/loader.find_headings), then paragraph-packed fixed-size with
-overlap inside each section. A document with no headings at all -- the
-common case in this project's dataset, since most notes started life
-as PDF/PPTX slides with no real Markdown heading syntax -- simply
-becomes one big "section" and is chunked the same way.
+overlap inside each section. A document with no headings becomes one
+big section and is chunked the same way (see loader._extract_title for
+why that's the common case, not an edge case, in this dataset).
 """
 
 from __future__ import annotations
@@ -92,12 +91,10 @@ def chunk_section(section_text: str, chunk_size: int, overlap: int) -> list[str]
     characters, carrying `overlap` characters from the end of one
     chunk into the start of the next.
 
-    Paragraphs (blank-line-separated blocks) are never split apart
-    unless a single paragraph alone exceeds chunk_size, in which case
-    it is hard-sliced on its own (see _hard_slice). Packing whole
-    paragraphs together -- rather than slicing at a fixed character
-    count everywhere -- is what keeps chunk boundaries from landing
-    mid-sentence in the common case.
+    Paragraphs (blank-line-separated blocks) are packed whole -- rather
+    than sliced at a fixed character count -- so chunk boundaries don't
+    land mid-sentence. The one exception is a single paragraph longer
+    than chunk_size, which is hard-sliced on its own (see _hard_slice).
     """
     if overlap >= chunk_size:
         raise ValueError(

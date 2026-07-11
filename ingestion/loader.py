@@ -47,14 +47,10 @@ def discover_files(dataset_dir: Path) -> list[Path]:
 def find_headings(content: str) -> list[tuple[int, int, str]]:
     """Find every genuine Markdown heading line in content.
 
-    A '#'-prefixed line only counts as a heading if it is preceded by
-    a blank line (or is the first line of the file) -- this is how
-    Markdown headings are conventionally written, and it is what
-    reliably tells them apart from Python comments such as
-    "# Embed the question" that show up inline inside this dataset's
-    unfenced code examples. (Verified against every course-notes file:
-    every '#' line that was actually a code comment was packed directly
-    against the surrounding code with no blank line before it.)
+    A '#'-prefixed line only counts as a heading if it is preceded by a
+    blank line (or is the first line of the file). This tells a real
+    heading apart from a Python comment like "# Embed the question"
+    that shows up inline inside this dataset's unfenced code examples.
 
     Returns a list of (line_index, level, heading_text) tuples in
     document order, where level is 1-6 (the number of '#' characters).
@@ -79,9 +75,8 @@ def _extract_title(content: str, fallback: str) -> str:
     or `fallback` (normally the filename) if the file has none.
 
     Many of this project's course notes started life as PDF/PPTX slide
-    decks and were converted to Markdown without real heading syntax,
-    so falling back to the filename is the common case, not an edge
-    case -- it must produce a sensible title on its own.
+    decks converted to Markdown without real heading syntax, so this
+    fallback is the common case, not an edge case.
     """
     headings = find_headings(content)
     return headings[0][2] if headings else fallback

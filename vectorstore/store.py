@@ -1,20 +1,9 @@
 """
 Vector store: owns the FAISS index lifecycle -- build, save, load, and
-rebuild -- plus the small amount of metadata FAISS itself can't store.
-
-FAISS only ever holds vectors and an integer position per vector (its
-"vector id") -- it has no idea what document or text that vector came
-from. This module fills that gap with two plain JSON files saved next
-to the index:
-
-  - metadata.json  ordered list of chunk info; list position == vector id
-  - manifest.json   what the index was last built from (used to detect
-                     staleness and to show "index status" in the UI)
-
-No database is used -- everything the app needs to run lives in
-vectorstore/index/, which makes the whole project deployable to a
-plain hosting environment (e.g. Streamlit Community Cloud) with no
-extra infrastructure to stand up.
+rebuild -- plus the metadata.json/manifest.json sidecar files that
+hold what FAISS itself can't (see BuildResult for their shape). No
+database is used; everything lives in vectorstore/index/ as plain
+files, so the app needs no extra infrastructure to deploy.
 """
 
 from __future__ import annotations
@@ -57,11 +46,10 @@ class BuildResult:
 def build_index(vectors: np.ndarray) -> faiss.Index:
     """Build a flat inner-product FAISS index from a set of vectors.
 
-    IndexFlatIP (inner product) over L2-normalized vectors is
-    mathematically equivalent to cosine similarity, and "flat" (exact,
-    brute-force) search is fine at the scale of a single course's notes
-    -- a few hundred to a few thousand chunks -- so there's no need for
-    an approximate index type like IVF or HNSW here.
+    IndexFlatIP over L2-normalized vectors is mathematically equivalent
+    to cosine similarity. "Flat" (exact, brute-force) search is fine at
+    the scale of a single course's notes, so an approximate index type
+    like IVF or HNSW isn't needed here.
     """
     dim = vectors.shape[1]
     index = faiss.IndexFlatIP(dim)
@@ -121,12 +109,8 @@ def load_manifest(index_dir: Path) -> dict[str, Any] | None:
 
 
 def needs_rebuild(manifest: dict[str, Any] | None, current_hash: str) -> bool:
-    """Compare the freshly computed dataset hash to the last successful
-    build's manifest.
-
-    True if nothing has been built yet, or if the notes / chunk
-    settings / embedding model have changed since the last build.
-    """
+    """True if nothing has been built yet, or if the notes, chunk
+    settings, or embedding model changed since the last build."""
     if manifest is None:
         return True
     return manifest["dataset_hash"] != current_hash
@@ -137,13 +121,10 @@ def rebuild_pipeline(
 ) -> BuildResult:
     """Run the full ingest -> chunk -> embed -> index -> persist pipeline.
 
-    Re-ingesting and re-chunking is cheap and always happens (it's
-    plain file I/O and string splitting), but embedding and rebuilding
-    the FAISS index is comparatively expensive -- so that expensive
-    part is skipped whenever the dataset, chunk settings, and embedding
-    model are unchanged since the last successful build, unless
-    force=True. This is what "only create embeddings once, reuse
-    existing embeddings, only rebuild when requested" means in code.
+    Ingesting and chunking are cheap and always run. Embedding and
+    rebuilding the FAISS index are expensive, so that part is skipped
+    when nothing has changed since the last build -- see needs_rebuild
+    -- unless force=True.
     """
     documents, warnings = load_all_documents(config.dataset_dir)
 
