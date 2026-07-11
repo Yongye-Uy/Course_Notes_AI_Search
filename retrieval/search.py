@@ -9,6 +9,7 @@ for what happens to these results next.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -36,6 +37,41 @@ class RetrievedChunk:
     rank: int                      # 1-based position in the ranked results
 
 
+# Splits a compound question like "what is ai? and BM-25?" into separate
+# sub-questions, on '?' boundaries.
+_SUBQUERY_SPLIT_RE = re.compile(r"(?<=[?])\s*")
+# A leading conjunction left over after splitting, e.g. "and BM-25?".
+_LEADING_CONJUNCTION_RE = re.compile(r"^(?:and|&|,)\s+", re.IGNORECASE)
+_MIN_SUBQUERY_LENGTH = 3
+
+
+def _split_into_subqueries(query: str) -> list[str]:
+    """Break a compound question into separate sub-questions.
+
+    A single embedding of a multi-topic query (e.g. "what is ai? and
+    BM-25?") tends to drift toward one topic in vector space and can
+    crowd the other topic out of top-k entirely, even though each
+    topic retrieves well on its own. search() below retrieves each
+    sub-question independently and merges the results to avoid that.
+
+    Splitting is deliberately conservative -- on '?' boundaries only,
+    not on "and" -- because plenty of ordinary single questions
+    contain "and" as normal phrasing (e.g. "What is PageRank and how
+    does it work?"); splitting those would strand a meaningless
+    fragment like "how does it work?" with no subject. A question with
+    one or zero '?' characters always returns as a list of one
+    (itself), so the overwhelmingly common single-question case is
+    untouched.
+    """
+    parts = [p.strip() for p in _SUBQUERY_SPLIT_RE.split(query) if p.strip()]
+    if len(parts) < 2:
+        return [query.strip()]
+
+    cleaned = [_LEADING_CONJUNCTION_RE.sub("", p).strip() for p in parts]
+    cleaned = [p for p in cleaned if len(p) >= _MIN_SUBQUERY_LENGTH]
+    return cleaned if len(cleaned) > 1 else [query.strip()]
+
+
 def search(
     query: str,
     index: faiss.Index | None,
@@ -50,6 +86,12 @@ def search(
     -- if there is no index yet or it's empty. Callers (see
     generation/client.py) turn an empty result into the required
     "couldn't find relevant information" refusal.
+
+    Compound questions (e.g. "what is ai? and BM-25?") are split into
+    sub-questions and retrieved independently, then merged -- see
+    _split_into_subqueries. A single question splits into a list of
+    one, so this reduces to one embedding call and one FAISS search,
+    identical to before this was added.
     """
     if index is None or index.ntotal == 0:
         return []
@@ -61,26 +103,27 @@ def search(
             "index after changing the embedding model."
         )
 
-    query_vector = encoder.encode([query])
-    scores, vector_ids = index.search(query_vector, top_k)
+    subqueries = _split_into_subqueries(query)
+    query_vectors = encoder.encode(subqueries)
+    all_scores, all_vector_ids = index.search(query_vectors, top_k)
 
-    # FAISS pads short result sets with -1 when top_k > ntotal; drop those.
-    found = [
-        (int(vec_id), float(score))
-        for vec_id, score in zip(vector_ids[0], scores[0])
-        if vec_id != -1
+    # Merge per-subquery results into one set, keyed by vector id so a
+    # chunk that matches more than one sub-question is only kept once
+    # (at its best score).
+    best_by_vector_id: dict[int, tuple[float, dict[str, Any]]] = {}
+    for scores, vector_ids in zip(all_scores, all_vector_ids):
+        for vec_id, score in zip(vector_ids, scores):
+            vec_id = int(vec_id)
+            # FAISS pads short result sets with -1 when top_k > ntotal.
+            if vec_id == -1 or vec_id >= len(metadata):
+                continue
+            score = float(score)
+            current = best_by_vector_id.get(vec_id)
+            if current is None or score > current[0]:
+                best_by_vector_id[vec_id] = (score, metadata[vec_id])
+
+    ranked = sorted(best_by_vector_id.values(), key=lambda pair: pair[0], reverse=True)
+    return [
+        RetrievedChunk(chunk=chunk, score=score, rank=rank)
+        for rank, (score, chunk) in enumerate(ranked, start=1)
     ]
-
-    results: list[RetrievedChunk] = []
-    for rank, (vec_id, score) in enumerate(found, start=1):
-        # metadata's list position is each chunk's faiss_vector_id (see
-        # vectorstore.store.rebuild_pipeline), so this is a direct index,
-        # not a search -- no database or file lookup needed per result.
-        if vec_id >= len(metadata):
-            # Index and metadata are out of sync (shouldn't normally
-            # happen -- both are written together in rebuild_pipeline).
-            # Skip rather than crash the whole search.
-            continue
-        results.append(RetrievedChunk(chunk=metadata[vec_id], score=score, rank=rank))
-
-    return results

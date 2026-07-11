@@ -20,6 +20,12 @@ from generation.client import generate_answer
 from retrieval.search import EmbeddingModelMismatchError, search
 from vectorstore import store
 
+# A generous cap, not a real limit on legitimate questions -- mainly a
+# guard against pasting a huge block of text (e.g. an adversarial
+# prompt-injection payload) that would waste an LLM call on something
+# that was never a real course-notes question.
+MAX_QUESTION_LENGTH = 1000
+
 # Fixed test queries for the Evaluation tab (brief requires 5-10, with
 # retrieved chunks, similarity, generated answer, and an optional
 # expected answer for comparison). Kept here rather than a separate
@@ -82,6 +88,19 @@ EVAL_CASES: list[dict] = [
         # the fixed refusal message, not a hallucinated answer.
         "question": "What is the capital of France?",
         "expected_answer": None,
+    },
+    {
+        # Compound question spanning two different courses' notes (AI +
+        # BM-25/IR). Regression test for a real bug: a single embedding
+        # of this whole query used to drift toward one topic and crowd
+        # the other out of retrieval entirely, producing a full refusal
+        # even though both halves answer correctly on their own. Correct
+        # behavior now is a partial-or-full answer covering both parts.
+        "question": "What is AI? And what is BM-25?",
+        "expected_answer": (
+            "Should address both parts: a definition of AI, and a "
+            "definition of BM-25 as a keyword-based ranking function."
+        ),
     },
 ]
 
@@ -194,6 +213,11 @@ with search_tab:
     if submitted:
         if not question.strip():
             st.warning("Please enter a question.")
+        elif len(question) > MAX_QUESTION_LENGTH:
+            st.warning(
+                f"Question is too long ({len(question)} characters, max "
+                f"{MAX_QUESTION_LENGTH}). Please shorten it."
+            )
         elif encoder is None or build_result is None:
             st.error("Search is unavailable until the setup problems above are resolved.")
         else:
