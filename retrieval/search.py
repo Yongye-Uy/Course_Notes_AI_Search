@@ -99,7 +99,7 @@ def search(
         )
 
     subqueries = _split_into_subqueries(query)
-    query_vectors = encoder.encode(subqueries)
+    query_vectors = encoder.encode(subqueries, is_query=True)
     all_scores, all_vector_ids = index.search(query_vectors, top_k)
 
     # Merge per-subquery results into one set, keyed by vector id so a

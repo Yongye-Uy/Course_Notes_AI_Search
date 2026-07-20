@@ -1,5 +1,6 @@
 # Secrets
 .env
+Report.md
 
 # Python
 __pycache__/

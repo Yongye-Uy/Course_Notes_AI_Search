@@ -59,14 +59,11 @@ class Config:
 config = Config()
 
 
-# Short, known-good list of embedding models offered in the Streamlit
-# dropdown. Restricting the choice to this list (rather than free-text
-# entry) is what prevents the "invalid embedding model" error case from
-# ever reaching sentence-transformers in the first place.
 AVAILABLE_EMBEDDING_MODELS: list[str] = [
     "all-MiniLM-L6-v2",
     "all-mpnet-base-v2",
     "multi-qa-MiniLM-L6-cos-v1",
+    "nvidia/nv-embedqa-e5-v5",
 ]
 
 # Plain-English labels for the dropdown -- the real sentence-transformers
@@ -77,6 +74,7 @@ EMBEDDING_MODEL_LABELS: dict[str, str] = {
     "all-MiniLM-L6-v2": "Basic (fast)",
     "all-mpnet-base-v2": "Smart (more accurate, slower)",
     "multi-qa-MiniLM-L6-cos-v1": "Balanced (tuned for Q&A)",
+    "nvidia/nv-embedqa-e5-v5": "NVIDIA (High accuracy, slow)",
 }
 
 

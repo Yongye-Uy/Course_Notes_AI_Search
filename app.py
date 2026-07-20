@@ -158,7 +158,7 @@ top_k = st.sidebar.slider(
 temperature = config.temperature_default
 
 embedding_model = st.sidebar.selectbox(
-    "Embedding model",
+    "AI model",
     AVAILABLE_EMBEDDING_MODELS,
     index=AVAILABLE_EMBEDDING_MODELS.index(config.embedding_model_default),
     format_func=lambda name: EMBEDDING_MODEL_LABELS.get(name, name),
