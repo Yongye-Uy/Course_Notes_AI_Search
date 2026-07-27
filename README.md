@@ -140,15 +140,30 @@ The sidebar allows you to change:
 
 ## Evaluation
 
-The project includes an evaluation page with several predefined test questions.
+**Evaluation Results**
+I ran 9 fixed test questions through the same search-and-answer pipeline used in the Search tab. This was tested against the live dataset: 30 files and 656 chunks, using the all-MiniLM-L6-v2 model.
 
-The evaluation covers:
+| # | Question | Top similarity | Result | Notes |
+|---|---|---|---|---|
+| 1 | What is PageRank and how does it work? | 0.835 | correct | Grounded answer with inline citations. |
+| 2 | What is Retrieval-Augmented Generation (RAG)? | 0.557 | correct | Grounded, cites the RAG Architecture notes. |
+| 3 | How do you evaluate an information retrieval system? | 0.587 | correct | Grounded in the IR Evaluation notes. |
+| 4 | What is a vector database and how is it used in Neural IR? | 0.626 | correct | Grounded in the Neural IR notes. |
+| 5 | Explain content-based filtering in recommender systems. | 0.609 | correct | Grounded in the Recommender Systems notes. |
+| 6 | What are the key stages of web crawling? | 0.636 | correct | Grounded in the Web Crawling notes. |
+| 7 | What ethical issues arise in information retrieval systems? | 0.539 | correct | Grounded in the Ethics in AI notes. |
+| 8 | What is the capital of France? (deliberately off-topic) | 0.274 | correctly refused | Caught by the grounding rule, not just because retrieval came back empty. |
+| 9 | What is AI? And what is BM-25? (compound, two topics) | 0.796 / 0.541 | correct | Both halves answered and cited correctly. This is the test case for the two-part question fix above. |
 
-- Course-related questions
-- Off-topic questions
-- Multi-part questions
+## Embedding Model
 
-The results show retrieval quality, generated answers, and source citations.
+We use the all MiniLM L6 v2 model to create dense vectors. This ensures we use semantic search instead of simple keyword matching like TF IDF.
+
+```python
+from embeddings.encoder import EmbeddingEncoder
+encoder = EmbeddingEncoder("all-MiniLM-L6-v2")
+vectors = encoder.encode(["search query"])
+```
 
 ---
 
